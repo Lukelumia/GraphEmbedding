@@ -1,0 +1,7 @@
+pandas
+jsonlines
+click
+joblib
+tqdm
+gensim
+networkx
