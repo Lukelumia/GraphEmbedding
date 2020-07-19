@@ -22,6 +22,8 @@ from gensim.models import Word2Vec
 import pandas as pd
 
 from ..walker import RandomWalker
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Node2Vec:
@@ -33,9 +35,17 @@ class Node2Vec:
         self.walker = RandomWalker(
             graph, p=p, q=q, use_rejection_sampling=use_rejection_sampling)
 
-        print("Preprocess transition probs...")
+        logger.info("Preprocess transition probs...")
         self.walker.preprocess_transition_probs()
 
+        logger.info('Clearing Graph object')
+        self.graph.clear()
+
+        # logger.info('load csv files for alias')
+        # reload alias as dict
+        # self.walker.load_dumped_alias()
+
+        logger.info('Simulate walks...')
         self.sentences = self.walker.simulate_walks(
             num_walks=num_walks, walk_length=walk_length, workers=workers, verbose=1)
 
@@ -60,11 +70,11 @@ class Node2Vec:
 
     def get_embeddings(self,):
         if self.w2v_model is None:
-            print("model not train")
+            logger.error("model not trained")
             return {}
 
         self._embeddings = {}
-        for word in self.graph.nodes():
+        for word in self.walker.nodes:
             self._embeddings[word] = self.w2v_model.wv[word]
 
         return self._embeddings

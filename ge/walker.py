@@ -2,17 +2,18 @@ import itertools
 import math
 import random
 
+import os
+import jsonlines
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
-from tqdm import trange
 
 from .alias import alias_sample, create_alias_table
 from .utils import partition_num
-
+from tqdm.auto import tqdm
 
 class RandomWalker:
-    def __init__(self, G, p=1, q=1, use_rejection_sampling=0):
+    def __init__(self, G, p=1, q=1, use_rejection_sampling=0, dump_path=None, dump_size=100000):
         """
         :param G:
         :param p: Return parameter,controls the likelihood of immediately revisiting a node in the walk.
@@ -23,6 +24,11 @@ class RandomWalker:
         self.p = p
         self.q = q
         self.use_rejection_sampling = use_rejection_sampling
+        self.dump_path = dump_path
+        self.dump_size = dump_size
+
+        self.nodes = list(G.nodes())
+        self.neighbors = {node: list(G.neighbors(node)) for node in G.nodes()}
 
     def deepwalk_walk(self, walk_length, start_node):
 
@@ -30,7 +36,7 @@ class RandomWalker:
 
         while len(walk) < walk_length:
             cur = walk[-1]
-            cur_nbrs = list(self.G.neighbors(cur))
+            cur_nbrs = self.neighbors[cur]
             if len(cur_nbrs) > 0:
                 walk.append(random.choice(cur_nbrs))
             else:
@@ -47,7 +53,7 @@ class RandomWalker:
 
         while len(walk) < walk_length:
             cur = walk[-1]
-            cur_nbrs = list(G.neighbors(cur))
+            cur_nbrs = self.neighbors[cur]
             if len(cur_nbrs) > 0:
                 if len(walk) == 1:
                     walk.append(
@@ -87,7 +93,7 @@ class RandomWalker:
         walk = [start_node]
         while len(walk) < walk_length:
             cur = walk[-1]
-            cur_nbrs = list(G.neighbors(cur))
+            cur_nbrs = self.neighbors[cur]
             if len(cur_nbrs) > 0:
                 if len(walk) == 1:
                     walk.append(
@@ -96,7 +102,7 @@ class RandomWalker:
                     upper_bound, lower_bound, shatter = rejection_sample(
                         inv_p, inv_q, len(cur_nbrs))
                     prev = walk[-2]
-                    prev_nbrs = set(G.neighbors(prev))
+                    prev_nbrs = set(self.neighbors[prev])
                     while True:
                         prob = random.random() * upper_bound
                         if (prob + shatter >= upper_bound):
@@ -120,21 +126,70 @@ class RandomWalker:
 
         G = self.G
 
-        nodes = list(G.nodes())
+        # self.nodes = list(G.nodes())
 
         results = Parallel(n_jobs=workers, verbose=verbose, )(
-            delayed(self._simulate_walks)(nodes, num, walk_length) for num in
+            delayed(self._simulate_walks)(num, walk_length) for num in
             partition_num(num_walks, workers))
 
         walks = list(itertools.chain(*results))
 
         return walks
 
-    def _simulate_walks(self, nodes, num_walks, walk_length,):
+    def dump_walks(self, results):
+        dump_path = os.path.join(self.dump_path, f'walks_dump.jsonl')
+        with jsonlines.open(dump_path, 'a') as writer:
+            writer.write_all(results)
+
+    def dump_jsonlines(self, d, path):
+        # new_d = {str(key): value for key, value in d.items()}
+        # with jsonlines.open(path, 'a') as writer:
+        #     writer.write(object)
+        pd.DataFrame.from_dict(d.items()).to_csv(path, mode='a', header=False, index=False)
+
+    def load_dumped_alias(self):
+        # load nodes
+        df = pd.read_csv('data/cache/alias_nodes', converters={0: ast.literal_eval, 1: ast.literal_eval},
+                         header=None)
+        self.alias_nodes = pd.Series(df[1].values, index=df[0]).to_dict()
+        df = None
+
+        if not self.use_rejection_sampling:
+            # load alias
+            df = pd.read_csv('data/cache/alias_edges', converters={0: ast.literal_eval, 1: ast.literal_eval},
+                             header=None)
+            self.alias_edges = pd.Series(df[1].values, index=df[0]).to_dict()
+
+
+    def simulate_walks2(self, num_walks, walk_length, workers=1, verbose=0, batch_size=100000):
+        G = self.G
+
+        self.nodes = list(G.nodes())
+
+        jobs = [(num, walk_length) for num in partition_num(num_walks, workers)]
+
+        p = multiprocessing.Pool(processes=workers)
+
+        results = list()
+        for batch in np.array_split(jobs, math.ceil(len(jobs)/batch_size)):
+            result = p.starmap(self._simulate_walks, batch)
+            if self.dump_path is None:
+                results.extend(result)
+            else:
+                self.dump_walks(result)
+
+        if self.dump_path is None:
+            return None
+
+        walks = list(itertools.chain(*results))
+
+        return walks
+
+    def _simulate_walks(self, num_walks, walk_length,):
         walks = []
         for _ in range(num_walks):
-            random.shuffle(nodes)
-            for v in nodes:
+            random.shuffle(self.nodes)
+            for num, v in tqdm(enumerate(self.nodes), total=len(self.nodes), desc=f"Simulating walks ({_}/{num_walks})"):
                 if self.p == 1 and self.q == 1:
                     walks.append(self.deepwalk_walk(
                         walk_length=walk_length, start_node=v))
@@ -144,6 +199,15 @@ class RandomWalker:
                 else:
                     walks.append(self.node2vec_walk(
                         walk_length=walk_length, start_node=v))
+
+                if num % self.dump_size == 0:
+                    if self.dump_path is not None:
+                        self.dump_walks(walks)
+                        walks = list()
+            if self.dump_path is not None:
+                self.dump_walks(walks)
+                walks = list()
+
         return walks
 
     def get_alias_edge(self, t, v):
@@ -158,7 +222,7 @@ class RandomWalker:
         q = self.q
 
         unnormalized_probs = []
-        for x in G.neighbors(v):
+        for x in self.neighbors[v]:
             weight = G[v][x].get('weight', 1.0)  # w_vx
             if x == t:  # d_tx == 0
                 unnormalized_probs.append(weight/p)
@@ -172,26 +236,37 @@ class RandomWalker:
 
         return create_alias_table(normalized_probs)
 
+
+
     def preprocess_transition_probs(self):
         """
         Preprocessing of transition probabilities for guiding the random walks.
         """
         G = self.G
-        alias_nodes = {}
-        for node in G.nodes():
+        alias_nodes = dict()
+        for num, node in tqdm(enumerate(G.nodes()), total=len(G.nodes()), desc='Preprocess - nodes'):
             unnormalized_probs = [G[node][nbr].get('weight', 1.0)
-                                  for nbr in G.neighbors(node)]
+                                  for nbr in self.neighbors[node]]
             norm_const = sum(unnormalized_probs)
             normalized_probs = [
                 float(u_prob)/norm_const for u_prob in unnormalized_probs]
             alias_nodes[node] = create_alias_table(normalized_probs)
+            # if num % 1000 == 0:
+        #         self.dump_jsonlines(alias_nodes, './data/cache/alias_nodes')
+        #         alias_nodes = dict()
+        # self.dump_jsonlines(alias_nodes, './data/cache/alias_nodes')
+        # alias_nodes = dict()
 
         if not self.use_rejection_sampling:
-            alias_edges = {}
-
-            for edge in G.edges():
+            alias_edges = dict()
+            for num, edge in tqdm(enumerate(G.edges()), total=len(G.edges()), desc='Preprocess - edges'):
                 alias_edges[edge] = self.get_alias_edge(edge[0], edge[1])
-                self.alias_edges = alias_edges
+            #     if num % 1000 == 0:
+            #         self.dump_jsonlines(alias_edges, './data/cache/alias_edges')
+            #         alias_edges = dict()
+            # self.dump_jsonlines(alias_edges, './data/cache/alias_edges')
+            # self.alias_edges = dict()
+            self.alias_edges = alias_edges
 
         self.alias_nodes = alias_nodes
         return
