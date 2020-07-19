@@ -1,11 +1,10 @@
 # import warnings
 # warnings.simplefilter(action='ignore', category=FutureWarning)
-from src.ge import Node2Vec
+from ge import Node2Vec
 import click
 import networkx as nx
 import pandas as pd
 import os
-import multiprocessing
 # from cidatakit.utils.logging import setup_logging
 import random
 import logging
