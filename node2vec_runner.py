@@ -8,6 +8,7 @@ import os
 # from cidatakit.utils.logging import setup_logging
 import random
 import logging
+import jsonlines
 
 
 def save_embeddings(embeddings, embedding_path):
@@ -66,6 +67,7 @@ def node2vec(graph_edgelist_path, run_name, walk_number, walk_length, dimensions
     run_name = run_name + f'_{p}_{q}_{walk_number}_{walk_length}_{dimensions}_{window_size}_{epochs}_{learning_rate}'
     dir_path = os.path.join('.', 'embeddings', run_name)
     embedding_path = os.path.join(dir_path, 'embedding.emb')
+    sentences_dump_path = os.path.join(dir_path, 'walk_dump.jsonl')
     model_path = os.path.join(dir_path, 'model.mod')
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
@@ -108,7 +110,11 @@ def node2vec(graph_edgelist_path, run_name, walk_number, walk_length, dimensions
     logger.info('Initing model')
     workers = multiprocessing.cpu_count() - 1
     model = Node2Vec(G, walk_length=walk_length, num_walks=walk_number, p=p, q=q, workers=workers, use_rejection_sampling=True)
-
+    
+    # Save sentences
+    with jsonlines.open(sentences_dump_path, 'a') as writer:
+        writer.write_all(model.sentences)
+    
     logger.info('starting training')
     model.train(window_size=window_size, iter=epochs, alpha=learning_rate, embed_size=dimensions, workers=workers)
 

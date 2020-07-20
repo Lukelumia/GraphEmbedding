@@ -38,8 +38,8 @@ class Node2Vec:
         logger.info("Preprocess transition probs...")
         self.walker.preprocess_transition_probs()
 
-        logger.info('Clearing Graph object')
-        self.graph.clear()
+        # logger.info('Clearing Graph object')
+        # self.graph.clear()
 
         # logger.info('load csv files for alias')
         # reload alias as dict
@@ -48,6 +48,7 @@ class Node2Vec:
         logger.info('Simulate walks...')
         self.sentences = self.walker.simulate_walks(
             num_walks=num_walks, walk_length=walk_length, workers=workers, verbose=1)
+
 
     def train(self, embed_size=128, window_size=5, workers=3, iter=5, **kwargs):
 
