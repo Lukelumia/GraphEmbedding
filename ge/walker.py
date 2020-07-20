@@ -277,9 +277,24 @@ class RandomWalker:
         # alias_nodes = dict()
 
         if not self.use_rejection_sampling:
-            alias_edges = dict()
-            for num, edge in tqdm(enumerate(G.edges()), total=len(G.edges()), desc='Preprocess - edges'):
-                alias_edges[edge] = self.get_alias_edge(edge[0], edge[1])
+        
+            def do_alieas_edge(edges):
+                items = list()
+                for edge in tqdm(edges):
+                    items.append((edge, self.get_alias_edge(edge[0], edge[1])))
+                return items
+
+            results = Parallel(n_jobs=multiprocessing.cpu_count(), verbose=1, )(
+                delayed(do_alieas_edge)(edges) for edges in np.array_split(G.edges(), multiprocessing.cpu_count()))
+
+            results = list(itertools.chain(*results))
+            alias_edges = {key: value for key, value in results}
+        
+        
+            # alias_edges = dict()
+            # for num, edge in tqdm(enumerate(G.edges()), total=len(G.edges()), desc='Preprocess - edges'):
+                # alias_edges[edge] = self.get_alias_edge(edge[0], edge[1])
+                
             #     if num % 1000 == 0:
             #         self.dump_jsonlines(alias_edges, './data/cache/alias_edges')
             #         alias_edges = dict()
