@@ -9,6 +9,7 @@ import os
 import random
 import logging
 import jsonlines
+import multiprocessing
 
 
 def save_embeddings(embeddings, embedding_path):
@@ -23,6 +24,11 @@ def add_file_logger(logger, location):
     :param location: A file path location where the log file should be located
     :return:
     """
+    import sys
+    h = logging.StreamHandler(sys.stdout)
+    h.setLevel(logging.DEBUG)
+    h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(h)
     fh = logging.FileHandler(location)
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
@@ -76,6 +82,7 @@ def node2vec(graph_edgelist_path, run_name, walk_number, walk_length, dimensions
     # logger = setup_logging(__name__)
     # logger = setup_logging('src')
     logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
     random.seed(42)
     logger.info(f'Run: {run_name}')
 

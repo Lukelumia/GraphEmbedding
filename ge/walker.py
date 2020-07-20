@@ -12,6 +12,8 @@ from .alias import alias_sample, create_alias_table
 from .utils import partition_num
 from tqdm.auto import tqdm
 
+import multiprocessing
+
 class RandomWalker:
     def __init__(self, G, p=1, q=1, use_rejection_sampling=0, dump_path=None, dump_size=100000):
         """
@@ -138,6 +140,7 @@ class RandomWalker:
         self.node_partitions = {num: chunk for num, chunk in \
                                 enumerate(chunks(self.nodes, chunk_size))}
 
+        return self.simulate_walks2(self, num_walks, walk_length, workers, verbose)
         # old
         # results = Parallel(n_jobs=workers, verbose=verbose, )(
         #     delayed(self._simulate_walks)(num, walk_length) for num in
@@ -181,20 +184,21 @@ class RandomWalker:
 
         self.nodes = list(G.nodes())
 
-        jobs = [(num, walk_length) for num in partition_num(num_walks, workers)]
+        jobs = [(num_walks, walk_length, partition_num) for partition_num in self.node_partitions.keys()]
 
-        p = multiprocessing.Pool(processes=workers)
+        with multiprocessing.Pool(processes=workers) as p:
+            results = p.starmap(self._simulate_walks, jobs)
 
-        results = list()
-        for batch in np.array_split(jobs, math.ceil(len(jobs)/batch_size)):
-            result = p.starmap(self._simulate_walks, batch)
-            if self.dump_path is None:
-                results.extend(result)
-            else:
-                self.dump_walks(result)
-
-        if self.dump_path is None:
-            return None
+        # results = list()
+        # for batch in np.array_split(jobs, math.ceil(len(jobs)/batch_size)):
+        #     result = p.starmap(self._simulate_walks, batch)
+        #     if self.dump_path is None:
+        #         results.extend(result)
+        #     else:
+        #         self.dump_walks(result)
+        #
+        # if self.dump_path is None:
+        #     return None
 
         walks = list(itertools.chain(*results))
 
