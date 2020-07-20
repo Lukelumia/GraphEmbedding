@@ -124,13 +124,28 @@ class RandomWalker:
 
     def simulate_walks(self, num_walks, walk_length, workers=1, verbose=0):
 
+        def chunks(lst, n):
+            """Yield successive n-sized chunks from lst."""
+            for i in range(0, len(lst), n):
+                yield lst[i:i + n]
+
+
         G = self.G
 
         # self.nodes = list(G.nodes())
+        chunk_size = math.ceil(len(self.nodes) / workers)
+        random.shuffle(self.nodes)
+        self.node_partitions = {num: chunk for num, chunk in \
+                                enumerate(chunks(self.nodes, chunk_size))}
+
+        # old
+        # results = Parallel(n_jobs=workers, verbose=verbose, )(
+        #     delayed(self._simulate_walks)(num, walk_length) for num in
+        #     partition_num(num_walks, workers))
 
         results = Parallel(n_jobs=workers, verbose=verbose, )(
-            delayed(self._simulate_walks)(num, walk_length) for num in
-            partition_num(num_walks, workers))
+            delayed(self._simulate_walks)(num_walks, walk_length, partition) for \
+            partition in self.node_partitions.keys())
 
         walks = list(itertools.chain(*results))
 
@@ -185,11 +200,11 @@ class RandomWalker:
 
         return walks
 
-    def _simulate_walks(self, num_walks, walk_length,):
+    def _simulate_walks(self, num_walks, walk_length, partition):
         walks = []
         for _ in range(num_walks):
-            random.shuffle(self.nodes)
-            for num, v in tqdm(enumerate(self.nodes), total=len(self.nodes), desc=f"Simulating walks ({_}/{num_walks})"):
+            random.shuffle(self.node_partitions[partition])
+            for num, v in tqdm(enumerate(self.node_partitions[partition]), total=len(self.node_partitions[partition]), desc=f"Simulating walks ({_}/{num_walks})"):
                 if self.p == 1 and self.q == 1:
                     walks.append(self.deepwalk_walk(
                         walk_length=walk_length, start_node=v))
