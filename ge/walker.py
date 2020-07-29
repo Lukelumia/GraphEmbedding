@@ -140,7 +140,7 @@ class RandomWalker:
         self.node_partitions = {num: chunk for num, chunk in \
                                 enumerate(chunks(self.nodes, chunk_size))}
 
-        return self.simulate_walks2(self, num_walks, walk_length, workers, verbose)
+        # return self.simulate_walks2(self, num_walks, walk_length, workers, verbose)
         # old
         # results = Parallel(n_jobs=workers, verbose=verbose, )(
         #     delayed(self._simulate_walks)(num, walk_length) for num in
